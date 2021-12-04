@@ -6,11 +6,11 @@
 
 use frame_support::{decl_module, decl_storage, decl_event, decl_error, dispatch, ensure, traits::Currency,codec::Decode};
 use frame_system::{ensure_root,ensure_signed};
+use frame_support::pallet_prelude::DispatchResultWithPostInfo;
 use sp_std::prelude::*;
 use core::str;
 use core::str::FromStr;
-
-
+mod lockable_currency;
 
 #[cfg(test)]
 mod mock;
@@ -503,7 +503,9 @@ decl_error! {
        /// Insurance has been already signed
        InsuranceAlreadySigned,
        /// The date format is not in  YYYY-MM-DD format
-       InvalidDateFormat
+       InvalidDateFormat,
+       //Integer overflow
+       Overflow
 	}
 }
 
@@ -2220,13 +2222,23 @@ decl_module! {
                 let current_reserve = InsurerReserves::<T>::take(signer.clone(), id.clone());
                 let new_reserve = current_reserve.checked_add(deposit.into()).unwrap();
                 InsurerReserves::<T>::insert(signer.clone(), id.clone(), new_reserve);
-                },
+            },
                 false => {
                     let deposit_into: u128 = deposit.into();
                     InsurerReserves::<T>::insert(signer.clone(), id.clone(), deposit_into);
             }
         }
             Ok(())
+        }
+
+        #[weight = 1000]
+        pub fn i_reserve_stake(origin, id: u32, deposit: u32) -> DispatchResultWithPostInfo {
+            let signer = ensure_signed(origin.clone())?;
+            InsurerReserves::<T>::try_mutate_exists(signer, id, |reserves| -> DispatchResultWithPostInfo {
+                let new_reserve = reserves.unwrap().checked_add(deposit.into()).ok_or(Error::<T>::Overflow)?;
+                *reserves = Some(new_reserve);
+                Ok(().into())
+            })
         }
         
         ///Withdraw a certain amount of funds only if the reserve is at minimum required amount
